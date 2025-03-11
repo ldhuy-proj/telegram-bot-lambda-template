@@ -24,6 +24,46 @@ docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest
 echo "Done!"
 
 # Lambda function handling
+ROLE_NAME="lambda-basic-role"
+POLICY_ARN="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+# Create lambda role if not exists
+echo "Checking if Lambda role exists..."
+ROLE_EXISTS=$(aws iam get-role --role-name "$ROLE_NAME" 2>&1)
+
+if [[ $ROLE_EXISTS == *"NoSuchEntity"* ]]; then
+    echo "IAM Role not yet existed, creating a new one..."
+
+    # Creating new role
+    aws iam create-role \
+        --role-name "$ROLE_NAME" \
+        --assume-role-policy-document '{
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Service": "lambda.amazonaws.com"
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }'
+
+    # Set policy for role
+    aws iam attach-role-policy \
+        --role-name "$ROLE_NAME" \
+        --policy-arn "$POLICY_ARN"
+
+    # Wait for 5 secs to make sure the role is created
+    sleep 5
+else
+    echo "IAM Role already existed. Done!"
+fi
+
+LAMBDA_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
+echo "Using IAM Role ARN: $LAMBDA_ROLE_ARN"
+
 echo "Checking if Lambda function exists..."
 LAMBDA_EXISTS=$(aws lambda get-function --function-name "$FUNCTION_NAME" 2>&1)
 
