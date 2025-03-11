@@ -18,7 +18,7 @@ fi
 
 # DEV
 echo "Building and pushing Docker image to ECR..."
-docker build -t $IMAGE_NAME .
+docker build --platform linux/arm64 -t $IMAGE_NAME .
 docker tag $IMAGE_NAME:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest
 docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest
 echo "Done!"
@@ -74,6 +74,7 @@ if [[ $LAMBDA_EXISTS == *"ResourceNotFoundException"* ]]; then
         --package-type Image \
         --code ImageUri="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:latest" \
         --role "$LAMBDA_ROLE_ARN" \
+        --architectures arm64 \
         --timeout 60 \
         --memory-size 128 \
         --no-cli-pager
@@ -96,3 +97,57 @@ aws lambda update-function-configuration \
     --environment "Variables={$ENVIRONMENNT_VARIABLES}"\
     --no-cli-pager
 echo "Done!"
+
+echo "Set policy for invoking Lambda URL..."
+LAMBDA_ARN=$(aws lambda get-function --function-name "$FUNCTION_NAME" --query 'Configuration.FunctionArn' --output text)
+POLICY_NAME="LambdaInvokeFunctionUrlPolicy"
+echo "Lambda ARN: $LAMBDA_ARN"
+STATEMENT_ID="AllowFunctionURLPublicAccess"
+
+# Check if the permission already exists
+EXISTING_POLICY=$(aws lambda get-policy --function-name "$FUNCTION_NAME" --query 'Policy' --output text 2>/dev/null | grep "$STATEMENT_ID")
+if [[ -n "$EXISTING_POLICY" ]]; then
+    echo "Permission '$STATEMENT_ID' already exists for Lambda: $FUNCTION_NAME"
+else
+    echo "Permission '$STATEMENT_ID' is not yet created. Creating new one..."
+
+    aws lambda add-permission \
+        --function-name "$FUNCTION_NAME" \
+        --statement-id "$STATEMENT_ID" \
+        --action "lambda:InvokeFunctionUrl" \
+        --principal "*" \
+        --function-url-auth-type "NONE"
+fi
+echo "Done!"
+
+echo "Checking if Function URL exists..."
+URL_EXISTS=$(aws lambda get-function-url-config --function-name "$FUNCTION_NAME" 2>&1)
+
+if [[ $URL_EXISTS == *"FunctionUrlConfigNotFoundException"* ]]; then
+    echo "🔹 Function URL is not yet existed, creating new one..."
+    aws lambda create-function-url-config \
+        --function-name "$FUNCTION_NAME" \
+        --auth-type NONE
+else
+    echo "Function URL existed!"
+fi
+echo "Done!"
+
+
+# Set webhook
+echo "Setting up webhook..."
+export BOT_TOKEN=$BOT_TOKEN
+LAMBDA_FUNCTION_URL=$(aws lambda get-function-url-config \
+    --function-name $FUNCTION_NAME \
+    --query 'FunctionUrl' --output text)
+
+echo "Lambda Function URL: $LAMBDA_FUNCTION_URL"
+
+
+# Run Python script
+python3 tlg_set_webhook.py
+if [[ $? -eq 0 ]]; then
+    echo "Webhook is set up successfully!"
+else
+    echo "Setting up webhook failed!"
+fi

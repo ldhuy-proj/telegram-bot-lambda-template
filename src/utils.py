@@ -1,6 +1,3 @@
-from configs import ADMIN_TELEGRAM_IDS
-from const import BSCSCAN_DATETIME_FORMAT, DEFAULT_COURSE_CURRENCY
-from datetime import datetime
 import time
 
 def get_content_from_message(event_payload):

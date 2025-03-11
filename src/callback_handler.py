@@ -1,7 +1,5 @@
 from configs import logger
 from const import CommandType
-from course_management import callback as course_callback
-from transaction_management import callback as transaction_callback
 import utils
 import helpers
 
